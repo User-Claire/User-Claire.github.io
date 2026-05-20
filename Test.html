@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Platformer Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: linear-gradient(to bottom, #87CEEB, #E0F6FF);
+            border: 3px solid #333;
+            overflow: hidden;
+        }
+        .player {
+            position: absolute;
+            width: 30px;
+            height: 40px;
+            background-color: #FF6B6B;
+            border-radius: 4px;
+        }
+        .platform {
+            position: absolute;
+            background-color: #8B4513;
+            border: 2px solid #654321;
+        }
+        .enemy {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-color: #FFD700;
+            border-radius: 50%;
+        }
+        .coin {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            background-color: #FFD700;
+            border-radius: 50%;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 4px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="info">
+            <div>Score: <span id="score">0</span></div>
+            <div>Health: <span id="health">3</span></div>
+            <div style="margin-top: 10px; font-size: 12px;">Arrow keys to move, Space to jump</div>
+        </div>
+    </div>
+
+    <script>
+        class Game {
+            constructor() {
+                this.container = document.getElementById('gameContainer');
+                this.width = 800;
+                this.height = 600;
+                this.score = 0;
+                this.health = 3;
+                this.gameOver = false;
+                
+                this.player = {
+                    x: 50,
+                    y: 450,
+                    width: 30,
+                    height: 40,
+                    velocityY: 0,
+                    velocityX: 0,
+                    jumping: false,
+                    speed: 5,
+                    jumpPower: 12,
+                    gravity: 0.6
+                };
+                
+                this.keys = {};
+                this.platforms = [];
+                this.enemies = [];
+                this.coins = [];
+                
+                this.setupPlatforms();
+                this.setupEnemies();
+                this.setupCoins();
+                this.createPlayerElement();
+                
+                window.addEventListener('keydown', (e) => this.keys[e.key] = true);
+                window.addEventListener('keyup', (e) => this.keys[e.key] = false);
+                
+                this.gameLoop();
+            }
+            
+            setupPlatforms() {
+                const platformData = [
+                    { x: 0, y: 550, width: 800, height: 50 }, // ground
+                    { x: 150, y: 450, width: 200, height: 20 },
+                    { x: 500, y: 380, width: 200, height: 20 },
+                    { x: 100, y: 300, width: 150, height: 20 },
+                    { x: 550, y: 250, width: 150, height: 20 },
+                    { x: 300, y: 180, width: 200, height: 20 }
+                ];
+                
+                platformData.forEach(data => {
+                    const platform = document.createElement('div');
+                    platform.className = 'platform';
+                    platform.style.left = data.x + 'px';
+                    platform.style.top = data.y + 'px';
+                    platform.style.width = data.width + 'px';
+                    platform.style.height = data.height + 'px';
+                    this.container.appendChild(platform);
+                    
+                    this.platforms.push(data);
+                });
+            }
+            
+            setupEnemies() {
+                const enemyData = [
+                    { x: 200, y: 410, width: 30, height: 30, speed: 2, minX: 150, maxX: 350 },
+                    { x: 550, y: 340, width: 30, height: 30, speed: 1.5, minX: 500, maxX: 700 }
+                ];
+                
+                enemyData.forEach(data => {
+                    const enemy = document.createElement('div');
+                    enemy.className = 'enemy';
+                    enemy.style.left = data.x + 'px';
+                    enemy.style.top = data.y + 'px';
+                    this.container.appendChild(enemy);
+                    
+                    this.enemies.push({ ...data, element: enemy, direction: 1 });
+                });
+            }
+            
+            setupCoins() {
+                const coinData = [
+                    { x: 180, y: 410 },
+                    { x: 280, y: 410 },
+                    { x: 530, y: 330 },
+                    { x: 620, y: 330 },
+                    { x: 130, y: 280 },
+                    { x: 200, y: 280 },
+                    { x: 400, y: 160 }
+                ];
+                
+                coinData.forEach(data => {
+                    const coin = document.createElement('div');
+                    coin.className = 'coin';
+                    coin.style.left = data.x + 'px';
+                    coin.style.top = data.y + 'px';
+                    this.container.appendChild(coin);
+                    
+                    this.coins.push({ ...data, element: coin, collected: false });
+                });
+            }
+            
+            createPlayerElement() {
+                this.playerElement = document.createElement('div');
+                this.playerElement.className = 'player';
+                this.playerElement.style.left = this.player.x + 'px';
+                this.playerElement.style.top = this.player.y + 'px';
+                this.container.appendChild(this.playerElement);
+            }
+            
+            isCollidingWithPlatform(x, y, width, height) {
+                return this.platforms.some(p => {
+                    return x < p.x + p.width &&
+                           x + width > p.x &&
+                           y + height >= p.y &&
+                           y + height <= p.y + p.height &&
+                           this.player.velocityY >= 0;
+                });
+            }
+            
+            update() {
+                if (this.gameOver) return;
+                
+                // Horizontal movement
+                if (this.keys['ArrowLeft'] || this.keys['a']) {
+                    this.player.velocityX = -this.player.speed;
+                } else if (this.keys['ArrowRight'] || this.keys['d']) {
+                    this.player.velocityX = this.player.speed;
+                } else {
+                    this.player.velocityX = 0;
+                }
+                
+                this.player.x += this.player.velocityX;
+                
+                // Boundary check
+                if (this.player.x < 0) this.player.x = 0;
+                if (this.player.x + this.player.width > this.width) this.player.x = this.width - this.player.width;
+                
+                // Gravity
+                this.player.velocityY += this.player.gravity;
+                this.player.y += this.player.velocityY;
+                
+                // Platform collision
+                if (this.isCollidingWithPlatform(this.player.x, this.player.y, this.player.width, this.player.height)) {
+                    this.player.jumping = false;
+                    this.player.velocityY = 0;
+                }
+                
+                // Jump
+                if ((this.keys[' '] || this.keys['ArrowUp'] || this.keys['w']) && !this.player.jumping) {
+                    this.player.velocityY = -this.player.jumpPower;
+                    this.player.jumping = true;
+                }
+                
+                // Fall off screen
+                if (this.player.y > this.height) {
+                    this.health--;
+                    this.resetPlayer();
+                }
+                
+                // Enemy movement and collision
+                this.enemies.forEach(enemy => {
+                    enemy.x += enemy.speed * enemy.direction;
+                    if (enemy.x <= enemy.minX || enemy.x >= enemy.maxX) {
+                        enemy.direction *= -1;
+                    }
+                    enemy.element.style.left = enemy.x + 'px';
+                    
+                    if (this.checkCollision(this.player, enemy)) {
+                        this.health--;
+                        this.resetPlayer();
+                    }
+                });
+                
+                // Coin collection
+                this.coins.forEach(coin => {
+                    if (!coin.collected && this.checkCollision(this.player, coin)) {
+                        coin.collected = true;
+                        coin.element.style.display = 'none';
+                        this.score += 10;
+                    }
+                });
+                
+                // Update UI
+                document.getElementById('score').textContent = this.score;
+                document.getElementById('health').textContent = this.health;
+                
+                if (this.health <= 0) {
+                    this.gameOver = true;
+                    alert('Game Over! Final Score: ' + this.score);
+                }
+                
+                this.playerElement.style.left = this.player.x + 'px';
+                this.playerElement.style.top = this.player.y + 'px';
+            }
+            
+            checkCollision(obj1, obj2) {
+                return obj1.x < obj2.x + obj2.width &&
+                       obj1.x + obj1.width > obj2.x &&
+                       obj1.y < obj2.y + obj2.height &&
+                       obj1.y + obj1.height > obj2.y;
+            }
+            
+            resetPlayer() {
+                this.player.x = 50;
+                this.player.y = 450;
+                this.player.velocityY = 0;
+                this.player.jumping = false;
+            }
+            
+            gameLoop() {
+                this.update();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        new Game();
+    </script>
+</body>
+</html>
